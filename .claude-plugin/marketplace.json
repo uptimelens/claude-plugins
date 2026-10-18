@@ -1,0 +1,15 @@
+{
+  "name": "uptimelens",
+  "description": "Official UptimeLens plugins for Claude Code: uptime monitoring and on-call workflows through the UptimeLens MCP server.",
+  "owner": {
+    "name": "UptimeLens",
+    "url": "https://uptimelens.com"
+  },
+  "plugins": [
+    {
+      "name": "uptimelens",
+      "source": "./plugins/uptimelens",
+      "description": "Create and manage uptime monitors, find who is on call, acknowledge or snooze escalation pages, and cover shifts — guided playbooks for the UptimeLens MCP tools."
+    }
+  ]
+}

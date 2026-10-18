@@ -1,0 +1,125 @@
+[
+  {
+    "skills": ["uptimelens-on-call"],
+    "query": "Who is on call for the database team right now?",
+    "expected_behavior": [
+      "Calls list_on_call_schedules and matches the schedule by name (database) to get its scheduleId",
+      "Calls who_is_on_call with that scheduleId",
+      "Reports the on-call user's name, or — if gapReason is set — explains the gap (e.g. outside_active_window, schedule_disabled) and offers to create an override",
+      "Does not call any write tool for a read-only question"
+    ]
+  },
+  {
+    "skills": ["uptimelens-on-call"],
+    "query": "Acknowledge the active page for the API monitor.",
+    "expected_behavior": [
+      "Calls list_escalation_runs with state=active and isTest=false to discover the runId",
+      "Identifies the correct run by triggeringMonitorId or incidentId rather than guessing",
+      "Confirms the specific run with the user before writing",
+      "Calls acknowledge_escalation with that runId and explains that paging now stops"
+    ]
+  },
+  {
+    "skills": ["uptimelens-on-call"],
+    "query": "Snooze that alert for 30 minutes.",
+    "expected_behavior": [
+      "Finds the active run via list_escalation_runs (state=active) if a runId is not already in context",
+      "Confirms before writing",
+      "Calls snooze_escalation with durationMinutes=30",
+      "Tells the user the alert will page again after the window, and does not use snooze as a substitute for acknowledging"
+    ]
+  },
+  {
+    "skills": ["uptimelens-on-call"],
+    "query": "Cover Sam's shift tonight from 18:00 to 06:00.",
+    "expected_behavior": [
+      "Calls list_on_call_schedules to pick the schedule and read its timezone",
+      "Treats the user's 18:00-06:00 window as the schedule's local time and converts it to UTC before writing",
+      "Calls list_team_members to resolve the covering user's userId by name",
+      "Confirms the schedule, user, and exact UTC window with the user before writing",
+      "Sets endAt to the next calendar day because the window crosses midnight, so endAt is after startAt",
+      "Calls create_on_call_override with scheduleId, userId, startAt and endAt as UTC RFC3339 timestamps, and an optional reason"
+    ]
+  },
+  {
+    "skills": ["uptimelens-on-call"],
+    "query": "Actually, extend the cover I just created for Sam until 08:00.",
+    "expected_behavior": [
+      "Recognizes an override already exists and edits it in place with update_on_call_override instead of creating a new one",
+      "Passes the override's id plus only the changed field (endAt), leaving userId/startAt/reason unchanged",
+      "Converts 08:00 to a UTC RFC3339 endAt and confirms the new window with the user before writing",
+      "Does not call create_on_call_override, which would make a duplicate overlapping override"
+    ]
+  },
+  {
+    "skills": ["uptimelens-on-call"],
+    "query": "Is anything paging right now?",
+    "expected_behavior": [
+      "Calls list_escalation_runs with state=active and isTest=false",
+      "Summarizes the runs ranked by urgency (high first) and age (oldest startedAt first)",
+      "Offers to acknowledge or snooze specific runs rather than acting automatically",
+      "Treats isTest=true runs, if surfaced, as test pages and not real incidents"
+    ]
+  },
+  {
+    "skills": ["uptimelens-on-call"],
+    "query": "Who's on call for the database team this week, and are there any coverage gaps?",
+    "expected_behavior": [
+      "Calls list_on_call_schedules and matches the database schedule by name to get its scheduleId",
+      "Calls get_on_call_schedule with that scheduleId (a ~7 day lookahead) rather than who_is_on_call, because the question is about the upcoming week and not just now",
+      "Summarizes the upcoming shifts (who and when) and surfaces any gaps with their reason and the coverage percent",
+      "Offers to create an override for an uncovered window, and does not call any write tool unprompted"
+    ]
+  },
+  {
+    "skills": ["uptimelens-on-call"],
+    "query": "Extend the current override on the database schedule by two hours.",
+    "expected_behavior": [
+      "Calls list_on_call_schedules to resolve the database scheduleId",
+      "Calls list_on_call_overrides with that scheduleId to find the active override (not a pending cover request, which cannot be edited) and its id, rather than assuming an override id is already in context",
+      "Computes the new endAt (the override's current endAt + 2h) as a UTC RFC3339 timestamp and confirms the new window with the user",
+      "Calls update_on_call_override with the discovered id and only the changed endAt, not create_on_call_override (which would make a duplicate)"
+    ]
+  },
+  {
+    "skills": ["uptimelens-on-call"],
+    "query": "Accept the pending cover request for the database on-call schedule.",
+    "expected_behavior": [
+      "Calls list_on_call_schedules to resolve the database scheduleId",
+      "Calls list_on_call_overrides and identifies the pending entry (state=pending = an unaccepted cover request) and its id",
+      "Confirms with the user before writing, since this changes who is on call",
+      "Calls accept_cover_request with that id (not update_on_call_override, which rejects a pending entry), and explains it becomes an active override and that only the target user or an admin can accept"
+    ]
+  },
+  {
+    "skills": ["uptimelens-on-call"],
+    "query": "The database issue is fixed — close that page for good.",
+    "expected_behavior": [
+      "Finds the run via list_escalation_runs (state=active or acknowledged) rather than guessing a runId",
+      "Confirms with the user that the underlying issue is fixed, not merely noisy, because resolve cannot be undone",
+      "Calls resolve_escalation with the runId and states that the run will never page again",
+      "Does NOT map this to acknowledge_escalation — acknowledge leaves the run open and can re-page"
+    ]
+  },
+  {
+    "skills": ["uptimelens-on-call"],
+    "query": "Ask Dana if she can take my on-call shift on Friday night.",
+    "expected_behavior": [
+      "Recognises this as a request, not an assignment, and uses create_cover_request rather than create_on_call_override",
+      "Discovers scheduleId via list_on_call_schedules and Dana's userId via list_team_members",
+      "Converts the Friday-night window to UTC RFC3339 and confirms it before writing",
+      "Tells the user the request is pending until Dana accepts — until then the original person is still on call",
+      "Surfaces FeatureNotAvailable as an unmet cover-request feature rather than retrying"
+    ]
+  },
+  {
+    "skills": ["uptimelens-on-call"],
+    "query": "Cancel that cover — I'll keep the shift after all.",
+    "expected_behavior": [
+      "Calls list_on_call_overrides for the schedule to find the entry instead of guessing an id",
+      "Uses delete_on_call_override for an active override, and decline_cover_request for one still pending",
+      "Confirms first, naming whose shift returns to the regular rotation",
+      "Does not shorten the override with update_on_call_override when the user means it should not happen at all"
+    ]
+  }
+]

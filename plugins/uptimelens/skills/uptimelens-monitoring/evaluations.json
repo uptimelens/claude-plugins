@@ -1,0 +1,74 @@
+[
+  {
+    "skills": ["uptimelens-monitoring"],
+    "query": "Monitor https://api.example.com for me.",
+    "expected_behavior": [
+      "Calls list_monitors first to check the URL is not already monitored, because create_monitor is not idempotent",
+      "Confirms the exact URL with the user before creating",
+      "Calls create_monitor with the url",
+      "If the user also wanted auth, a keyword check, or a non-HTTP protocol, creates the basic HTTP monitor and tells them to finish those settings in the dashboard rather than claiming the MCP can set them"
+    ]
+  },
+  {
+    "skills": ["uptimelens-monitoring"],
+    "query": "I just deployed the billing service. What should I monitor?",
+    "expected_behavior": [
+      "Calls list_monitors to assess current coverage before recommending anything",
+      "Recommends the specific gaps (new endpoints or health checks with no monitor) and waits for confirmation instead of creating monitors silently",
+      "On confirmation, calls create_monitor for each approved URL",
+      "Where a new monitor sits behind an already-monitored upstream, offers register_monitor_dependency so the downstream check does not page when the upstream is down",
+      "Notes what cannot be auto-created via MCP (non-HTTP protocols, auth, keyword checks) and defers those to the dashboard"
+    ]
+  },
+  {
+    "skills": ["uptimelens-monitoring"],
+    "query": "What's down right now?",
+    "expected_behavior": [
+      "Calls get_overview first — one call answers the question and groups monitors that failed the same way at the same target into a single outage instead of one row each",
+      "Reports the distinct outages rather than a raw monitor count, so forty symptoms of one failure are not read as forty incidents",
+      "For a specific monitor, calls list_status_changes and then get_root_cause with a statusChangeId for per-probe diagnostics",
+      "Falls back to list_monitors with status=[down] only when the raw per-monitor inventory is genuinely needed",
+      "Summarizes what is down without calling any write tool for this read-only question"
+    ]
+  },
+  {
+    "skills": ["uptimelens-monitoring"],
+    "query": "We're deploying tonight from 22:00 to 23:00 — don't page us.",
+    "expected_behavior": [
+      "Identifies the affected monitors via list_monitors",
+      "Resolves the 22:00-23:00 window's timezone (passes an IANA timezone or converts to UTC) and confirms it with the user before writing",
+      "Calls create_maintenance with monitorIds, scheduleType=once, startTime, durationMinutes and timezone so alerts are suppressed during the window",
+      "Confirms the window is in place via list_maintenance (status=active or upcoming)"
+    ]
+  },
+  {
+    "skills": ["uptimelens-monitoring"],
+    "query": "Pause the staging monitor.",
+    "expected_behavior": [
+      "Finds the staging monitor via list_monitors",
+      "Confirms before pausing, noting that a real outage will not page while the monitor is paused",
+      "Calls pause_monitor with the monitor id",
+      "Mentions resume_monitor to restart it later rather than treating the pause as permanent"
+    ]
+  },
+  {
+    "skills": ["uptimelens-monitoring"],
+    "query": "Check the staging monitor every 5 minutes instead of every minute.",
+    "expected_behavior": [
+      "Finds the staging monitor via list_monitors to get its id",
+      "Calls update_monitor with the id and intervalSeconds=300 (5 minutes), leaving the name unchanged",
+      "Does not recreate the monitor and does not claim it can change the URL, type, auth, or thresholds via MCP — only name and check interval are editable through update_monitor, the rest stays in the dashboard",
+      "Confirms the new interval rather than treating the other settings as changed"
+    ]
+  },
+  {
+    "skills": ["uptimelens-monitoring"],
+    "query": "Open an incident for the API outage.",
+    "expected_behavior": [
+      "Calls create_incident with title, impact, message and affectedMonitorIds",
+      "Tells the user the incident is an unpublished draft (not public, subscribers not notified) that they publish from the dashboard",
+      "Does not claim it has published the incident or notified subscribers",
+      "Optionally uses post_incident_update as the situation develops and resolve_incident when it is over"
+    ]
+  }
+]
