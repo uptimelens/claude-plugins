@@ -35,6 +35,12 @@ claude mcp add --transport http UptimeLens https://api.uptimelens.com/public/mcp
 
 Then run `/mcp` in Claude Code, choose **UptimeLens → Authenticate**, sign in to your UptimeLens account and approve access. Naming the server `UptimeLens` matches how the skills refer to its tools.
 
+Prefer an API token? Create one under **Configuration → API Tokens** in the dashboard and pass it as a header instead:
+
+```bash
+claude mcp add --transport http UptimeLens https://api.uptimelens.com/public/mcp --header "Authorization: Bearer YOUR_API_TOKEN"
+```
+
 Read tools work on every plan. Tools that change state — creating monitors, acknowledging pages, overriding a rotation, opening incidents — require a Pro plan or higher, and every tool only sees your own account.
 
 ## Try it
