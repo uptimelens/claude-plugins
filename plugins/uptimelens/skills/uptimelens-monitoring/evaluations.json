@@ -6,7 +6,7 @@
       "Calls list_monitors first to check the URL is not already monitored, because create_monitor is not idempotent",
       "Confirms the exact URL with the user before creating",
       "Calls create_monitor with the url",
-      "If the user also wanted auth, a keyword check, or a non-HTTP protocol, creates the basic HTTP monitor and tells them to finish those settings in the dashboard rather than claiming the MCP can set them"
+      "If the user also wanted authentication or custom headers, creates the monitor and tells them to add those in the dashboard rather than claiming the MCP can set them"
     ]
   },
   {
@@ -17,7 +17,27 @@
       "Recommends the specific gaps (new endpoints or health checks with no monitor) and waits for confirmation instead of creating monitors silently",
       "On confirmation, calls create_monitor for each approved URL",
       "Where a new monitor sits behind an already-monitored upstream, offers register_monitor_dependency so the downstream check does not page when the upstream is down",
-      "Notes what cannot be auto-created via MCP (non-HTTP protocols, auth, keyword checks) and defers those to the dashboard"
+      "Picks the matching type for each gap (tcp for a database port, heartbeat for a scheduled job) and defers only what needs credentials (ssh, sftp, logins) to the dashboard"
+    ]
+  },
+  {
+    "skills": ["uptimelens-monitoring"],
+    "query": "I'm adding a nightly database backup cron job. Make sure we hear about it if it stops running.",
+    "expected_behavior": [
+      "Calls create_monitor with type=heartbeat, a name and intervalSeconds matching the schedule (86400 for nightly), after confirming the schedule",
+      "Does not invent a ping URL: explains that the tool does not return it and that the user copies it from the monitor's page in the dashboard",
+      "Writes the job's ping call so it reads the URL from an environment variable or secret store, not hard-coded or committed",
+      "Does not ask the user to paste the ping URL into the chat",
+      "Mentions that checking starts after the first ping"
+    ]
+  },
+  {
+    "skills": ["uptimelens-monitoring"],
+    "query": "Monitor our Postgres on db.example.com and the SSH port on bastion.example.com.",
+    "expected_behavior": [
+      "Calls create_monitor with type=tcp, url=db.example.com and port=5432 for the database",
+      "Does not try to create an ssh monitor over MCP; explains it needs credentials and is set up in the dashboard (or offers a tcp check on port 22 for plain reachability)",
+      "Confirms both targets with the user before creating"
     ]
   },
   {
@@ -69,6 +89,16 @@
       "Tells the user the incident is an unpublished draft (not public, subscribers not notified) that they publish from the dashboard",
       "Does not claim it has published the incident or notified subscribers",
       "Optionally uses post_incident_update as the situation develops and resolve_incident when it is over"
+    ]
+  },
+  {
+    "skills": ["uptimelens-monitoring"],
+    "query": "Add monitors for our 60 endpoints. Which plan do we need for that, and how much will it cost?",
+    "expected_behavior": [
+      "Calls get_plan to read the current plan, its monitor limit and its price before creating anything",
+      "Calls list_plans and compares the included monitors, extraMonitorMonthly and the monthly and annual prices of the plans that fit 60 monitors",
+      "Quotes prices exactly as returned (VAT is included where it applies, sales tax is added at checkout) and does not invent a plan, price or limit",
+      "Says that the plan is changed in the dashboard, not through the MCP server, and does not start creating monitors past the current limit without the user's go-ahead"
     ]
   }
 ]

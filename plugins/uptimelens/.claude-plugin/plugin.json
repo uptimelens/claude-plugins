@@ -1,11 +1,12 @@
 {
   "name": "uptimelens",
   "description": "UptimeLens uptime monitoring and on-call operations through the UptimeLens MCP server — create and manage monitors, find who is on call, acknowledge or snooze escalation pages, and cover shifts. Read tools work on all plans; write tools require Pro or higher.",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "author": {
     "name": "IrmakTech",
     "url": "https://uptimelens.com"
   },
   "homepage": "https://uptimelens.com",
+  "privacyPolicyUrl": "https://uptimelens.com/privacy",
   "keywords": ["uptime", "monitoring", "on-call", "alerting", "status-page", "mcp"]
 }

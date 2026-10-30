@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "UptimeLens": {
+      "type": "http",
+      "url": "https://api.uptimelens.com/public/mcp"
+    }
+  }
+}

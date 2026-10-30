@@ -1,6 +1,6 @@
 ---
 name: uptimelens-monitoring
-description: Sets up and manages UptimeLens uptime monitoring through the UptimeLens MCP server — create HTTP/HTTPS monitors, recommend what to monitor after a deploy, pause or resume checks, schedule maintenance windows to mute deploy noise, model monitor dependencies, and open, update or resolve incidents, then write up the postmortem and its follow-up actions. Use when the user mentions adding or creating a monitor, monitoring a URL or a newly deployed service, what to monitor after deploying, pausing or resuming a monitor, scheduling a maintenance window, checking what is down or what the uptime was, or opening, updating, resolving or writing a postmortem for an incident.
+description: Sets up and manages UptimeLens uptime monitoring through the UptimeLens MCP server — create monitors of any credential-free type (HTTP, TCP, DNS, ping, heartbeat for cron jobs, and more), recommend what to monitor after a deploy, pause or resume checks, schedule maintenance windows to mute deploy noise, model monitor dependencies, and open, update or resolve incidents, then write up the postmortem and its follow-up actions. Use when the user mentions adding or creating a monitor, monitoring a URL, port, DNS record, cron job or a newly deployed service, what to monitor after deploying, pausing or resuming a monitor, scheduling a maintenance window, checking what is down or what the uptime was, or opening, updating, resolving or writing a postmortem for an incident.
 ---
 
 # UptimeLens Monitoring
@@ -11,7 +11,7 @@ Set up and run UptimeLens uptime monitoring on the customer's own resources, thr
 
 Use it for the monitoring-setup and incident-bookkeeping side of the product:
 
-- Creating HTTP/HTTPS monitors, and recommending coverage after a deploy or for a new service.
+- Creating monitors (HTTP, TCP, DNS, ping, heartbeat for cron/backup jobs, and the other credential-free types), and recommending coverage after a deploy or for a new service.
 - Checking what is currently down and doing a light investigation (status history, per-probe root cause, response-time/availability).
 - Scheduling a maintenance window so a deploy or planned work does not page anyone.
 - Modeling monitor dependencies so a downstream check does not alert when its upstream is already down.
@@ -26,6 +26,8 @@ Hand off when the request is about responding to a page rather than monitoring: 
 3. Some read tools are gated by plan. `get_root_cause` (paid) and `get_incident_analytics` (Pro+) are **hard-gated** — below the plan they return a `FeatureNotAvailable` error; handle it like the write-tool prerequisites below (tell the user the plan is unmet, do not retry). `query_metrics` percentiles are **soft-gated** — the percentile fields come back null below Team, not an error.
 
 If a write tool is missing or returns `FeatureNotAvailable`, tell the user which prerequisite is unmet instead of retrying.
+
+When a create fails on a plan limit (`CapacityLimitReached`) or a feature is not on the plan (`FeatureNotAvailable`), use `UptimeLens:get_plan` to show the current plan, its limits and its price, and `UptimeLens:list_plans` to show which plan lifts the limit and what it costs. Quote the prices those tools return instead of guessing, and say that changing plan is done in the dashboard — the MCP server cannot change it.
 
 ## Tools
 
@@ -49,10 +51,12 @@ Read (discovery and context):
 - `UptimeLens:get_incident_analytics` — fleet-level incident metrics over a date range (MTTR, volume/trend, severity/source breakdown, top monitors) — Pro+.
 - `UptimeLens:list_maintenance` — maintenance windows; `status=active` answers "is anything in maintenance right now?".
 - `UptimeLens:list_status_pages` / `UptimeLens:get_status_page` — what is published to customers and which monitors appear on a page (useful when deciding coverage).
+- `UptimeLens:get_plan` — the current plan, the price of this account's plan (for a plan that is no longer offered, that plan's price rather than today's list price), its limits (monitors, team seats, status pages, SMS/voice credits…) and the shortest check interval it allows. Check it before creating several monitors, or after a capacity error to explain the limit.
+- `UptimeLens:list_plans` — every plan with its price for new subscriptions, included limits and capabilities, so you can answer "which plan do I need, and what does it cost?". On paid plans, monitors and seats above the included amount are billed per month at the listed price instead of being blocked, up to as many extra as the plan includes (none can be added while a payment is declined or overdue); credits are bought up front at `addOnUnitPrice`, with a minimum order of `addOnMinPurchaseAmount`.
 
 Write (change state — see "Confirm before writing"):
 
-- `UptimeLens:create_monitor` — create an HTTP/HTTPS monitor from a URL. See "What create_monitor can and cannot do".
+- `UptimeLens:create_monitor` — create a monitor of any credential-free type; HTTP by default. See "What create_monitor can and cannot do".
 - `UptimeLens:update_monitor` — edit an existing monitor's **name and/or check interval** (`id` + `name` and/or `intervalSeconds`, at least one). All other settings (URL, type, auth, headers, thresholds, regions) are preserved untouched and can't be changed via MCP. Reversible and idempotent.
 - `UptimeLens:pause_monitor` / `UptimeLens:resume_monitor` — stop or restart active monitoring for one monitor. Input: `id`. Reversible and idempotent.
 - `UptimeLens:register_monitor_dependency` — declare a child→parent dependency: while the parent is down, the child's down alerts are suppressed. Input: `monitorId` (child), `parentId`. Direct parent only; cycles/self rejected.
@@ -74,7 +78,7 @@ Discovery comes first: almost every write needs an ID, or a decision that only t
 Set up monitoring:
 - [ ] 1. See current coverage (list_monitors) — what exists, what's missing, what's already down
 - [ ] 2. For a new URL/service: check list_monitors for a duplicate (create_monitor is NOT idempotent)
-- [ ] 3. Confirm the URL(s) with the user, then create_monitor (HTTP/HTTPS only)
+- [ ] 3. Confirm the target(s) and type with the user, then create_monitor
 - [ ] 4. Wire topology if relevant (register_monitor_dependency: the new check under its upstream)
 - [ ] 5. If a deploy/maintenance is happening, mute noise (create_maintenance for the window)
 ```
@@ -89,9 +93,18 @@ Set up monitoring:
 
 ## What create_monitor can and cannot do
 
-`create_monitor` is a quick-add: give it a URL, it creates an **HTTP/HTTPS** monitor (https is assumed when no scheme is given), the name defaults to the host, and the check interval and alert group use the tenant defaults.
+`create_monitor` takes a `type` (default `http`) and a `url`; everything else has a default. With only a URL it behaves as a quick-add: an HTTP/HTTPS monitor (https assumed when no scheme is given), named after the host, on the tenant's default interval and alert group.
 
-It **cannot**, via MCP: create non-HTTP monitors (TCP/UDP, DNS, ping/ICMP, SSH, SMTP, etc.), or set authentication, custom headers, keyword/body assertions, a specific interval, or alert groups. For any of those, tell the user to finish the setup in the dashboard — do not pretend the MCP can configure them. After creation, `update_monitor` can change a monitor's **name and check interval** (only those two — everything else stays in the dashboard). There is **no `delete_monitor`** tool: to remove a monitor, point the user to the dashboard.
+Pick the type from what the user is protecting:
+- **Website or API endpoint** → `http` (add `keyword` to require text in the response). `cdncache`, `graphql` (needs `requestBody` = the query) and `websocket` work the same way with a URL.
+- **Database, cache or any TCP service** → `tcp` with `url` = host and `port`.
+- **DNS record** → `dns` with `url` = domain, `dnsRecordType` and `dnsExpectedRecords` (required).
+- **Host reachability** → `ping`. **Mail server** → `smtp`, `pop3` or `imap` (no login). **Time server** → `ntp`. **FTP** → `ftp` (anonymous, `ftp://` or `ftps://`). **Domain registration expiry** → `domain`. **UDP service** → `udp` with `port`, `requestBody` (message) and `keyword` (expected reply).
+- **Cron job, backup or scheduled task** → `heartbeat` with a `name` and `intervalSeconds` = how often the job runs (add `heartbeatGraceSeconds` for jobs whose run time varies). There is no URL to check: the job reports in by calling the monitor's **ping URL**. That URL is a secret and the tool does not return it. Tell the user to copy it from the monitor's page in the dashboard, and write the job so it reads the URL from an environment variable or secret store (for example `curl -fsS --retry 3 "$UPTIMELENS_HEARTBEAT_URL"` at the end of a successful run) — never hard-code it in the repository. The monitor starts checking after the first ping.
+
+When a type-specific field is missing, the error names it (`field=…`, `reason=required_when`); add that field and retry once — do not guess other fields.
+
+It **cannot**, via MCP: set credentials, request headers or cookies (also not inside the URL), so **ssh** and **sftp** monitors, and any check that needs a login, are created in the dashboard. It also does not choose alert groups, regions or response-time thresholds — finish those in the dashboard. After creation, `update_monitor` can change a monitor's **name and check interval** (only those two). There is **no `delete_monitor`** tool: to remove a monitor, point the user to the dashboard.
 
 ## Incidents open as drafts
 
@@ -111,10 +124,13 @@ Prefer the least-surprising action, recommend rather than create at scale, and n
 ## Common scenarios
 
 **"Monitor https://api.example.com."**
-`list_monitors` (check it isn't already monitored) → confirm the URL → `create_monitor(url)`. If the user wanted auth, a keyword check, or a non-HTTP protocol, create the basic HTTP monitor and tell them to finish those settings in the dashboard.
+`list_monitors` (check it isn't already monitored) → confirm the URL → `create_monitor(url)`. Add `keyword` if they want the page content checked. If they wanted authentication or custom headers, create the monitor and tell them to add those in the dashboard.
+
+**"I'm adding a nightly database backup job — make sure we hear if it stops running."**
+Confirm the schedule → `create_monitor(type="heartbeat", name, intervalSeconds=86400, heartbeatGraceSeconds)` → add the ping call to the end of the job, reading the URL from an environment variable → tell the user to copy the ping URL from the monitor's page in the dashboard into that variable. Do not ask the user to paste the URL into the chat, and do not commit it.
 
 **"I just deployed the billing service — what should I monitor?"**
-`list_monitors` to see current coverage → identify the gaps (the new public endpoints / health checks with no monitor) and **recommend** them to the user, rather than creating silently → on confirmation, `create_monitor` for each → if the new monitor sits behind something you already watch, `register_monitor_dependency` to put it under that upstream. Note what can't be auto-created (non-HTTP, auth, keywords) and hand those to the dashboard.
+`list_monitors` to see current coverage → identify the gaps (the new public endpoints / health checks with no monitor) and **recommend** them to the user, rather than creating silently → on confirmation, `create_monitor` for each → if the new monitor sits behind something you already watch, `register_monitor_dependency` to put it under that upstream. Pick the matching type for each gap (a database port is `tcp`, a scheduled job is `heartbeat`). Note what can't be created over MCP (ssh, sftp, anything needing a login) and hand those to the dashboard.
 
 **"What's down right now?"**
 `get_overview` first — it answers the whole question in one call and, crucially, groups monitors that failed the same way so you report *one* outage rather than forty. Then, for a specific monitor, `list_status_changes(monitorId, statuses=["down"])` to see the current outage and `get_root_cause(statusChangeId)` for the DNS/TLS/traceroute diagnostics. Fall back to `list_monitors(status=["down"])` only when you need the raw per-monitor list. Read-only; don't change anything.
